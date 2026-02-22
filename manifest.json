@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "MathML to LaTeX",
+  "version": "1.0",
+  "description": "Right-click on selected MathML formulas to copy them as LaTeX.",
+  "permissions": [
+    "contextMenus",
+    "activeTab",
+    "clipboardWrite"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["mathml-to-latex.js", "content.js"]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
