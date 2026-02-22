@@ -53,28 +53,63 @@ function extractLatexFromSelection(selection) {
   return results;
 }
 
+const MATH_SELECTORS =
+  "[data-math], math, .katex, mjx-container, .MathJax, .MathJax_Display";
+
 /**
  * Gather all math-related elements that intersect the selection,
  * looking both inside `root` and up through its ancestors.
+ * Traverses into shadow DOMs so we can find elements in Google Gemini, etc.
  */
 function collectMathCandidates(root, selection) {
-  const selectors = "math, .katex, mjx-container, .MathJax, .MathJax_Display";
   const candidates = [];
 
   // Look upward: root or an ancestor may itself be a math container.
-  if (root.closest) {
-    const ancestor = root.closest(selectors);
-    if (ancestor) candidates.push(ancestor);
-  }
-
-  // Look downward: children of root.
-  if (root.querySelectorAll) {
-    for (const el of root.querySelectorAll(selectors)) {
-      if (selection.containsNode(el, true)) candidates.push(el);
+  // Also cross shadow boundaries upward (shadow root → host → host's tree).
+  let node = root;
+  while (node) {
+    if (node.closest) {
+      const ancestor = node.closest(MATH_SELECTORS);
+      if (ancestor) {
+        candidates.push(ancestor);
+        break;
+      }
+    }
+    // Cross shadow boundary: if we're inside a shadow root, jump to the host.
+    const parentRoot = node.getRootNode ? node.getRootNode() : document;
+    if (parentRoot instanceof ShadowRoot) {
+      node = parentRoot.host;
+    } else {
+      break;
     }
   }
 
+  // Look downward: children of root, piercing shadow DOMs.
+  deepQueryAll(root, candidates, selection);
+
   return candidates;
+}
+
+/**
+ * Recursively collect matching elements, entering open shadow roots.
+ */
+function deepQueryAll(el, out, selection) {
+  if (!el) return;
+
+  // Direct matches in this tree scope.
+  if (el.querySelectorAll) {
+    for (const match of el.querySelectorAll(MATH_SELECTORS)) {
+      if (selection.containsNode(match, true)) out.push(match);
+    }
+  }
+
+  // Enter shadow roots of children (querySelectorAll doesn't pierce them).
+  const walk = el.querySelectorAll ? el.querySelectorAll("*") : [];
+  for (const child of walk) {
+    if (child.shadowRoot) {
+      deepQueryAll(child.shadowRoot, out, selection);
+    }
+  }
 }
 
 /**
@@ -82,6 +117,16 @@ function collectMathCandidates(root, selection) {
  * Marks any inner elements it consumes into `seen` to prevent duplicates.
  */
 function extractLatex(el, seen) {
+  // --- data-math attribute (Gemini and similar) ---
+  if (el.hasAttribute && el.hasAttribute("data-math")) {
+    const tex = el.getAttribute("data-math").trim();
+    if (tex) {
+      // Mark any inner .katex / <math> as seen to avoid duplicates.
+      for (const inner of el.querySelectorAll(".katex, math")) seen.add(inner);
+      return tex;
+    }
+  }
+
   // --- KaTeX ---
   if (el.classList && el.classList.contains("katex")) {
     const ann = el.querySelector(
