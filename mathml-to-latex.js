@@ -8,6 +8,13 @@ function mathmlToLatex(node) {
   return convertNode(node).trim();
 }
 
+const TEX_ANNOTATION_SELECTOR =
+  'annotation[encoding="application/x-tex"], annotation[encoding="text/x-latex"]';
+
+function getLocalName(el) {
+  return el.tagName.toLowerCase().replace(/^[a-z]+:/, "");
+}
+
 /* ------------------------------------------------------------------ */
 /*  Node dispatcher                                                    */
 /* ------------------------------------------------------------------ */
@@ -18,7 +25,7 @@ function convertNode(node) {
   }
   if (node.nodeType !== Node.ELEMENT_NODE) return "";
 
-  const tag = node.tagName.toLowerCase().replace(/^[a-z]+:/, ""); // strip ns prefix
+  const tag = getLocalName(node);
 
   switch (tag) {
     case "math":
@@ -97,10 +104,9 @@ function childElements(node) {
 
 function convertSemantics(node) {
   // Prefer an embedded TeX annotation.
-  const ann = node.querySelector(
-    'annotation[encoding="application/x-tex"], annotation[encoding="text/x-latex"]'
-  );
-  if (ann && ann.textContent.trim()) return ann.textContent.trim();
+  const ann = node.querySelector(TEX_ANNOTATION_SELECTOR);
+  const tex = ann?.textContent.trim();
+  if (tex) return tex;
   // Otherwise convert the first child (the presentation tree).
   const first = node.firstElementChild;
   return first ? convertNode(first) : convertChildren(node);
@@ -243,7 +249,6 @@ const MO_MAP = {
   "\u21A6": "\\mapsto",
   "\u2223": "\\mid",
   "\u2225": "\\parallel",
-  "\u22A5": "\\perp",
   "\u2220": "\\angle",
   "\u2207": "\\nabla",
   "\u2202": "\\partial",
@@ -291,11 +296,9 @@ function convertMo(node) {
   const text = node.textContent.trim();
   if (MO_MAP[text]) return MO_MAP[text];
 
-  // Large operator stretchy chars that map directly.
-  if (text === "\u2061") return ""; // function application (invisible)
-  if (text === "\u2062") return ""; // invisible times
-  if (text === "\u2063") return ""; // invisible separator
-  if (text === "\u2064") return ""; // invisible plus
+  // Invisible operator characters (U+2061–U+2064: function application,
+  // invisible times, invisible separator, invisible plus).
+  if (text >= "\u2061" && text <= "\u2064") return "";
 
   return text;
 }
@@ -425,13 +428,14 @@ function convertMunderover(node) {
   return `${base}_{${under}}^{${over}}`;
 }
 
+const LARGE_OPS = new Set([
+  "\u2211", "\u220F", "\u2210", "\u222B", "\u222C", "\u222D", "\u222E",
+  "\u22C0", "\u22C1", "\u22C2", "\u22C3",
+  "lim", "max", "min", "sup", "inf", "det", "Pr",
+]);
+
 function isLargeOp(text) {
-  const ops = [
-    "\u2211", "\u220F", "\u2210", "\u222B", "\u222C", "\u222D", "\u222E",
-    "\u22C0", "\u22C1", "\u22C2", "\u22C3",
-    "lim", "max", "min", "sup", "inf", "det", "Pr",
-  ];
-  return ops.includes(text);
+  return LARGE_OPS.has(text);
 }
 
 /* ------------------------------------------------------------------ */
@@ -441,7 +445,7 @@ function isLargeOp(text) {
 function convertMtable(node) {
   const rows = childElements(node)
     .filter((r) => {
-      const t = r.tagName.toLowerCase().replace(/^[a-z]+:/, "");
+      const t = getLocalName(r);
       return t === "mtr" || t === "mlabeledtr";
     })
     .map(convertMtr);
@@ -451,7 +455,7 @@ function convertMtable(node) {
   const parent = node.parentElement;
   if (parent) {
     const fences = getFences(parent);
-    if (fences === "()" || fences === "()") env = "pmatrix";
+    if (fences === "()") env = "pmatrix";
     else if (fences === "[]") env = "bmatrix";
     else if (fences === "{}") env = "Bmatrix";
     else if (fences === "||") env = "vmatrix";
@@ -466,8 +470,7 @@ function getFences(parent) {
   if (kids.length < 2) return "";
   const first = kids[0];
   const last = kids[kids.length - 1];
-  const tag = (el) => el.tagName.toLowerCase().replace(/^[a-z]+:/, "");
-  if (tag(first) === "mo" && tag(last) === "mo") {
+  if (getLocalName(first) === "mo" && getLocalName(last) === "mo") {
     return first.textContent.trim() + last.textContent.trim();
   }
   return "";
@@ -475,10 +478,7 @@ function getFences(parent) {
 
 function convertMtr(node) {
   return childElements(node)
-    .filter((c) => {
-      const t = c.tagName.toLowerCase().replace(/^[a-z]+:/, "");
-      return t === "mtd";
-    })
+    .filter((c) => getLocalName(c) === "mtd")
     .map(convertNode)
     .join(" & ");
 }
@@ -531,7 +531,7 @@ function convertMmultiscripts(node) {
     preSup = "";
   let inPre = false;
   for (let i = 1; i < kids.length; i++) {
-    const t = kids[i].tagName.toLowerCase().replace(/^[a-z]+:/, "");
+    const t = getLocalName(kids[i]);
     if (t === "mprescripts") {
       inPre = true;
       continue;

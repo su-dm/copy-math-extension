@@ -132,11 +132,12 @@ function extractLatex(el, seen) {
     const ann = el.querySelector(
       '.katex-mathml annotation[encoding="application/x-tex"]'
     );
-    if (ann && ann.textContent.trim()) {
+    const tex = ann?.textContent.trim();
+    if (tex) {
       // Mark inner <math> as seen so the raw-MathML path skips it.
       const inner = el.querySelector("math");
       if (inner) seen.add(inner);
-      return ann.textContent.trim();
+      return tex;
     }
   }
 
@@ -146,10 +147,11 @@ function extractLatex(el, seen) {
     const ann = el.querySelector(
       'mjx-assistive-mml annotation[encoding="application/x-tex"]'
     );
-    if (ann && ann.textContent.trim()) {
+    const tex = ann?.textContent.trim();
+    if (tex) {
       const inner = el.querySelector("math");
       if (inner) seen.add(inner);
-      return ann.textContent.trim();
+      return tex;
     }
     // Fallback: convert the assistive <math> via structural converter.
     const mathEl = el.querySelector("mjx-assistive-mml math");
@@ -182,12 +184,10 @@ function extractLatex(el, seen) {
   // --- Raw MathML ---
   if (el.tagName && el.tagName.toLowerCase() === "math") {
     // Fast path: TeX annotation.
-    const annotation = el.querySelector(
+    const tex = el.querySelector(
       'annotation[encoding="application/x-tex"], annotation[encoding="text/x-latex"]'
-    );
-    if (annotation && annotation.textContent.trim()) {
-      return annotation.textContent.trim();
-    }
+    )?.textContent.trim();
+    if (tex) return tex;
     // Slow path: structural converter.
     return mathmlToLatex(el);
   }
@@ -199,8 +199,7 @@ function extractLatex(el, seen) {
  * Minimal toast notification so the user knows what happened.
  */
 function showToast(message) {
-  const existing = document.getElementById("mathml-latex-toast");
-  if (existing) existing.remove();
+  document.getElementById("mathml-latex-toast")?.remove();
 
   const toast = document.createElement("div");
   toast.id = "mathml-latex-toast";
